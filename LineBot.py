@@ -1,105 +1,65 @@
-import os
-import sys
-from argparse import ArgumentParser
-# from dotenv import load_dotenv
-
-import asyncio
-import aiohttp
-from aiohttp import web
-
-import logging
-
-from aiohttp.web_runner import TCPSite
+from flask import Flask, request, abort
 
 from linebot import (
-    AsyncLineBotApi, WebhookParser
+    LineBotApi, WebhookHandler
 )
-from linebot.aiohttp_async_http_client import AiohttpAsyncHttpClient
 from linebot.exceptions import (
     InvalidSignatureError
 )
-from linebot.models import (
-    MessageEvent, TextMessage, TextSendMessage,
-)
+from linebot.models import *
 
-from linebot import LineBotApi, WebhookHandler
-from linebot.exceptions import InvalidSignatureError
-from linebot.models import MessageEvent, TextMessage, TextSendMessage, FollowEvent, SourceGroup
+#======python的函數庫==========
+import tempfile, os
+import datetime
+import time
+import traceback
+#======python的函數庫==========
 
-import json
+app = Flask(__name__)
+static_tmp_path = os.path.join(os.path.dirname(__file__), 'static', 'tmp')
+# Channel Access Token
+line_bot_api = LineBotApi(os.getenv('CHANNEL_ACCESS_TOKEN'))
+# Channel Secret
+handler = WebhookHandler(os.getenv('CHANNEL_SECRET'))
 
-import random
-import string
-import re
+# 監聽所有來自 /callback 的 Post Request
+@app.route("/callback", methods=['POST'])
+def callback():
+    # get X-Line-Signature header value
+    signature = request.headers['X-Line-Signature']
+    # get request body as text
+    body = request.get_data(as_text=True)
+    app.logger.info("Request body: " + body)
+    # handle webhook body
+    try:
+        handler.handle(body, signature)
+    except InvalidSignatureError:
+        abort(400)
+    return 'OK'
 
-# load_dotenv()
-channel_secret = os.getenv('LINE_CHANNEL_SECRET', None)
-channel_access_token = os.getenv('LINE_CHANNEL_ACCESS_TOKEN', None)
-if channel_secret is None:
-    print('Specify LINE_CHANNEL_SECRET as environment variable.')
-    sys.exit(1)
-if channel_access_token is None:
-    print('Specify LINE_CHANNEL_ACCESS_TOKEN as environment variable.')
-    sys.exit(1)
 
-class Handler:
-    def __init__(self, line_bot_api, parser, line):
-        self.line_bot_api = line_bot_api
-        self.line = line
-        self.parser = parser
+# 處理訊息
+@handler.add(MessageEvent, message=TextMessage)
+def handle_message(event):
+    pass
         
-    async def callback(self, request):
-        signature = request.headers['X-Line-Signature']
-        body = await request.text()
 
-        try:
-            events = self.parser.parse(body, signature)
-        except InvalidSignatureError:
-            return web.Response(status=400, text='Invalid signature')
+@handler.add(PostbackEvent)
+def handle_message(event):
+    print(event.postback.data)
+
+
+@handler.add(MemberJoinedEvent)
+def welcome(event):
+    uid = event.joined.members[0].user_id
+    gid = event.source.group_id
+    profile = line_bot_api.get_group_member_profile(gid, uid)
+    name = profile.display_name
+    message = TextSendMessage(text=f'{name}歡迎加入')
+    line_bot_api.reply_message(event.reply_token, message)
         
-        for event in events:
-            logging.info("Handling event: %s", event)
-            if isinstance(event, FollowEvent):
-                await self.handle_follow(event)
-            elif isinstance(event, MessageEvent):
-                await self.handle_message(event)
         
-        return web.Response(text="OK\n")
-
-    async def handle_follow(self, event):
-        pass
-
-    async def handle_message(self, event):
-        user_id = event.source.user_id
-        self.line.push_message(user_id, TextMessage(text='123'))
-
-async def main(port=8080):
-    session = aiohttp.ClientSession()
-    async_http_client = AiohttpAsyncHttpClient(session)
-    line_bot_api = AsyncLineBotApi(channel_access_token, async_http_client)
-    parser = WebhookParser(channel_secret)
-    line = LineBotApi(channel_access_token)
-
-    handler = Handler(line_bot_api, parser, line)
-
-    app = web.Application()
-    app.add_routes([web.post('/callback', handler.callback)])
-
-    runner = web.AppRunner(app)
-    await runner.setup()
-    site = TCPSite(runner=runner, port=port)
-    await site.start()
-
-    while True:
-        await asyncio.sleep(3600)  # sleep forever
-
+import os
 if __name__ == "__main__":
-    logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO)
-
-    arg_parser = ArgumentParser(
-        usage='Usage: python ' + __file__ + ' [--port <port>] [--help]'
-    )
-    arg_parser.add_argument('-p', '--port', type=int, default=8080, help='port')
-    options = arg_parser.parse_args()
-
-    asyncio.run(main(options.port))
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port)
