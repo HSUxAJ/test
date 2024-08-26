@@ -1,7 +1,7 @@
 import os
 import sys
 from argparse import ArgumentParser
-from dotenv import load_dotenv
+# from dotenv import load_dotenv
 
 import asyncio
 import aiohttp
@@ -32,7 +32,7 @@ import random
 import string
 import re
 
-load_dotenv()
+# load_dotenv()
 channel_secret = os.getenv('LINE_CHANNEL_SECRET', None)
 channel_access_token = os.getenv('LINE_CHANNEL_ACCESS_TOKEN', None)
 if channel_secret is None:
